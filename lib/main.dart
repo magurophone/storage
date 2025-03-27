@@ -4,23 +4,39 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'services/foreground_task_service.dart';
 import 'screens/setup_screen.dart';
 import 'screens/home_screen.dart';
 import 'utils/optimization_helper.dart';
 import 'utils/preferences.dart';  // 使用するので残します
+import 'package:permission_handler/permission_handler.dart';
 
 void main() async {
   // Flutter初期化を確実に行う
   WidgetsFlutterBinding.ensureInitialized();
   
-  // 設定の問題の診断
-  await _diagnosePreferences();
+  // エラーハンドリングを追加
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    print('Flutter エラー: ${details.exception}');
+    print('スタックトレース: ${details.stack}');
+  };
   
-  // フォアグラウンドタスクの初期設定
-  await _initForegroundTask();
-  
-  runApp(const MyApp());
+  try {
+    // 設定の問題の診断
+    await _diagnosePreferences();
+    
+    // フォアグラウンドタスクの初期設定
+    await _initForegroundTask();
+    
+    runApp(const MyApp());
+  } catch (e, stackTrace) {
+    print('アプリ起動時にエラーが発生: $e');
+    print('スタックトレース: $stackTrace');
+    // それでもアプリを起動する
+    runApp(const MyApp());
+  }
 }
 
 // 設定の問題を診断する
@@ -99,7 +115,10 @@ Future<void> _checkBackupSettingsFile() async {
 // フォアグラウンドタスクの初期設定
 Future<void> _initForegroundTask() async {
   try {
-    // パッケージの新しいAPIに合わせた初期化
+    print('フォアグラウンドタスク初期設定開始');
+    
+    // 旧バージョンとの互換性のための初期化コード
+    // バージョン8.17.0に合わせた設定
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'storage_monitor_channel',
@@ -113,13 +132,14 @@ Future<void> _initForegroundTask() async {
         playSound: false,
       ),
       foregroundTaskOptions: ForegroundTaskOptions(
-        eventAction: ForegroundTaskEventAction.repeat(15 * 60 * 1000), // 15分間隔
+        interval: 15 * 60 * 1000, // 15分間隔
         autoRunOnBoot: true,
         allowWakeLock: true,
         allowWifiLock: true,
       ),
     );
-    print('フォアグラウンドタスク初期設定成功');
+    
+    print('フォアグラウンドタスク初期設定完了');
   } catch (e) {
     print('フォアグラウンドタスク初期設定エラー: $e');
   }
@@ -136,23 +156,59 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: WithForegroundTask(
-        child: FutureBuilder<bool>(
-          future: _isSetupCompleted(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Scaffold(body: Center(child: CircularProgressIndicator()));
-            }
-            
-            final setupCompleted = snapshot.data ?? false;
-            print('セットアップ完了状態: $setupCompleted');
-            return setupCompleted 
-                ? const BatteryOptimizationWrapper(child: HomeScreen())
-                : const SetupScreen();
-          },
-        ),
-      ),
+      home: const SafeAppWrapper(),
     );
+  }
+}
+
+// エラーハンドリングを追加したラッパーウィジェット
+class SafeAppWrapper extends StatefulWidget {
+  const SafeAppWrapper({super.key});
+  
+  @override
+  SafeAppWrapperState createState() => SafeAppWrapperState();
+}
+
+class SafeAppWrapperState extends State<SafeAppWrapper> {
+  bool _isLoading = true;
+  bool _setupCompleted = false;
+  String? _errorMessage;
+  
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+  
+  Future<void> _initialize() async {
+    try {
+      // 権限を確認
+      if (Platform.isAndroid) {
+        var status = await Permission.storage.status;
+        if (!status.isGranted) {
+          status = await Permission.storage.request();
+        }
+        print('ストレージ権限状態: $status');
+      }
+      
+      // セットアップ状態を確認
+      final completed = await _isSetupCompleted();
+      
+      if (mounted) {
+        setState(() {
+          _setupCompleted = completed;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('初期化エラー: $e');
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'アプリの初期化中にエラーが発生しました: $e';
+          _isLoading = false;
+        });
+      }
+    }
   }
   
   // セットアップが完了しているかどうかを確認（PreferencesUtilを使用）
@@ -195,6 +251,54 @@ class MyApp extends StatelessWidget {
       }
     }
   }
+  
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    
+    if (_errorMessage != null) {
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 16),
+                Text(
+                  _errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _isLoading = true;
+                      _errorMessage = null;
+                    });
+                    _initialize();
+                  },
+                  child: const Text('再試行'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    
+    return WithForegroundTask(
+      child: _setupCompleted
+          ? const BatteryOptimizationWrapper(child: HomeScreen())
+          : const SetupScreen(),
+    );
+  }
 }
 
 // バッテリー最適化設定を案内するラッパーウィジェット
@@ -204,10 +308,10 @@ class BatteryOptimizationWrapper extends StatefulWidget {
   const BatteryOptimizationWrapper({super.key, required this.child});
   
   @override
-  _BatteryOptimizationWrapperState createState() => _BatteryOptimizationWrapperState();
+  BatteryOptimizationWrapperState createState() => BatteryOptimizationWrapperState();
 }
 
-class _BatteryOptimizationWrapperState extends State<BatteryOptimizationWrapper> {
+class BatteryOptimizationWrapperState extends State<BatteryOptimizationWrapper> {
   bool _checkingOptimization = true;
   
   @override

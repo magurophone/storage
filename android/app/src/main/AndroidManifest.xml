@@ -1,6 +1,4 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-
     <!-- 基本的な権限 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -20,14 +18,13 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
-        android:name=".CustomApplication"
         android:label="storage_monitor_new"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true">
         
         <!-- メインアクティビティ -->
         <activity
-            android:name="io.flutter.embedding.android.FlutterActivity"
+            android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/LaunchTheme"
@@ -47,7 +44,7 @@
 
         <!-- WorkManager BroadcastReceiver -->
         <receiver
-            android:name="be.tramckrijte.workmanager.WorkmanagerReceiver"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
