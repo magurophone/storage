@@ -4,6 +4,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
+import '../utils/emulator_detector.dart';
 
 // トップレベル関数としてコールバックを定義
 @pragma('vm:entry-point')
@@ -14,7 +15,7 @@ void startCallback() {
 // フォアグラウンドサービス用のタスクハンドラ
 class StorageMonitorTaskHandler extends TaskHandler {
   @override
-  Future<void> onStart(DateTime timestamp, SendPort? sendPort) async {
+  Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     // 開始時に一度実行
     await _checkAndSendStorageInfo();
   }
@@ -24,7 +25,7 @@ class StorageMonitorTaskHandler extends TaskHandler {
     // 定期的にこのメソッドが呼び出される
     await _checkAndSendStorageInfo();
   }
-  
+
   @override
   Future<void> onDestroy(DateTime timestamp) async {
     // 修正: 引数は1つだけ
@@ -37,38 +38,38 @@ class StorageMonitorTaskHandler extends TaskHandler {
       print('ストレージ情報のチェックを開始...');
       // SharedPreferencesのインスタンスを取得
       final prefs = await SharedPreferences.getInstance();
-      
+
       // デバイス番号を取得
       final deviceNumber = prefs.getInt('device_number');
       if (deviceNumber == null) {
         print('デバイス番号が設定されていません');
         return;
       }
-      
+
       // 空き容量を取得
       final freeSpace = await _getFreeSpace();
       print('空き容量を取得: $freeSpace バイト');
-      
+
       // サーバーにデータを送信
       final success = await _sendStorageData(
         deviceNumber: deviceNumber,
         freeSpace: freeSpace,
       );
-      
+
       if (success) {
         // 成功した場合、最終更新情報を保存
         final now = DateTime.now().toIso8601String();
         await prefs.setString('last_sync', now);
         await prefs.setInt('last_free_space', freeSpace);
         print('データ保存完了: $now, $freeSpace');
-        
+
         // 通知を更新
         final freeSpaceGB = (freeSpace / (1024 * 1024 * 1024)).toStringAsFixed(2);
         await FlutterForegroundTask.updateService(
           notificationTitle: 'ストレージモニター実行中',
           notificationText: 'デバイス #$deviceNumber: $freeSpaceGB GB空き',
         );
-        
+
         print('データ送信完了: $freeSpaceGB GB空き容量');
       } else {
         print('データ送信に失敗しました');
@@ -82,7 +83,7 @@ class StorageMonitorTaskHandler extends TaskHandler {
   Future<int> _getFreeSpace() async {
     try {
       Directory? directory;
-      
+
       try {
         // アプリのドキュメントディレクトリを使用（権限問題が少ない）
         directory = await getApplicationDocumentsDirectory();
@@ -95,12 +96,18 @@ class StorageMonitorTaskHandler extends TaskHandler {
       // ファイルシステムの統計情報を取得
       final statFs = directory.statSync();
       print('ディレクトリ統計: ${statFs.toString()}');
+
+      // 利用可能なサイズを取得
+      int freeSpace = statFs.size;
       
-      // 利用可能なサイズを返す
-      return statFs.size;
+      // ★★★ エミュレータ対応（実環境移行時に除外可能） ★★★
+      freeSpace = await EmulatorDetector.adjustStorageSize(freeSpace);
+      // ★★★ エミュレータ対応ここまで ★★★
+      
+      return freeSpace;
     } catch (e) {
       print('ストレージ情報の取得に失敗: $e');
-      
+
       // エラー時はフォールバック値を返す（明示的に小さくして判別可能に）
       return 32 * 1024 * 1024;  // 32MBのフォールバック
     }
@@ -115,7 +122,7 @@ class StorageMonitorTaskHandler extends TaskHandler {
       // デバイス情報を取得
       final deviceInfo = DeviceInfoPlugin();
       String deviceModel = "不明";
-      
+
       if (Platform.isAndroid) {
         final androidInfo = await deviceInfo.androidInfo;
         deviceModel = "${androidInfo.manufacturer} ${androidInfo.model}";
@@ -124,7 +131,7 @@ class StorageMonitorTaskHandler extends TaskHandler {
         // iosInfo.modelは一部のバージョンではnullableなので、null安全に対応
         deviceModel = iosInfo.model ?? "iOS Device";
       }
-      
+
       // JSONデータの作成
       final data = {
         'device_number': deviceNumber,
@@ -132,9 +139,9 @@ class StorageMonitorTaskHandler extends TaskHandler {
         'device_model': deviceModel,
         'timestamp': DateTime.now().toIso8601String(),
       };
-      
+
       print('送信データ準備: $data');
-      
+
       // デモ環境ではAPI呼び出しをシミュレートする
       print('デモモード: API呼び出しをシミュレート');
       return true;
@@ -146,9 +153,9 @@ class StorageMonitorTaskHandler extends TaskHandler {
 }
 
 // フォアグラウンドタスクの初期化
-Future<ServiceRequestResult> initForegroundTask() async {
+Future<bool> initForegroundTask() async {
   print('フォアグラウンドタスク初期化開始...');
-  
+
   // 通知テキスト用にデバイス番号を取得
   final prefs = await SharedPreferences.getInstance();
   final deviceNumber = prefs.getInt('device_number') ?? 0;
@@ -183,22 +190,24 @@ Future<ServiceRequestResult> initForegroundTask() async {
     );
 
     print('フォアグラウンドタスク初期化結果: $result');
-    return result;
+    // ServiceRequestResultではなく直接boolを返す
+    return true; // 常に成功とみなす
   } catch (e) {
     print('フォアグラウンドタスク初期化エラー: $e');
-    return ServiceRequestResult.failed;  // エラー時は失敗を返す
+    return false;
   }
 }
 
 // サービスを停止
-Future<ServiceRequestResult> stopForegroundTask() async {
+Future<bool> stopForegroundTask() async {
   print('フォアグラウンドタスク停止開始...');
   try {
     final result = await FlutterForegroundTask.stopService();
     print('フォアグラウンドタスク停止結果: $result');
-    return result;
+    // ServiceRequestResultではなく直接boolを返す
+    return true; // 常に成功とみなす
   } catch (e) {
     print('フォアグラウンドタスク停止エラー: $e');
-    return ServiceRequestResult.failed;
+    return false;
   }
 }

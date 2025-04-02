@@ -25,7 +25,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _loadData();
     _checkServiceStatus();
-    
+
     // 定期的に画面を更新（30秒ごと）
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       if (mounted) {
@@ -34,7 +34,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     });
   }
-  
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -42,7 +42,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _checkServiceStatus();
     }
   }
-  
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -65,7 +65,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final number = await PreferencesUtil.getDeviceNumber();
     final sync = await PreferencesUtil.getLastSync();
     final space = await PreferencesUtil.getLastFreeSpace();
-    
+
     if (mounted) {
       setState(() {
         deviceNumber = number;
@@ -75,23 +75,23 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       });
     }
   }
-  
+
   // GB単位に変換
   String _formatSize(int? bytes) {
     if (bytes == null) return '不明';
     final gb = bytes / (1024 * 1024 * 1024);
     return '${gb.toStringAsFixed(2)} GB';
   }
-  
+
   // 日時をフォーマット
   String _formatDateTime(String? dateTimeStr) {
     if (dateTimeStr == null) return '同期情報なし';
-    
+
     try {
       final dateTime = DateTime.parse(dateTimeStr);
       final now = DateTime.now();
       final difference = now.difference(dateTime);
-      
+
       if (difference.inSeconds < 60) {
         return '${difference.inSeconds}秒前';
       } else if (difference.inMinutes < 60) {
@@ -105,7 +105,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return dateTimeStr;
     }
   }
-  
+
   // サービスを開始/停止
   Future<void> _toggleService() async {
     if (isServiceRunning) {
@@ -113,7 +113,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     } else {
       await initForegroundTask();
     }
-    
+
     // サービスの状態を取得して更新
     await _checkServiceStatus();
   }
@@ -126,12 +126,14 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         // 代わりに単にサービスを再起動してデータ更新を促す
         await stopForegroundTask();
         await Future.delayed(const Duration(milliseconds: 500));
-        await initForegroundTask();
-        
+        bool success = await initForegroundTask();
+
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('サービスを再起動して更新しました')),
+          SnackBar(content: Text(success
+              ? 'サービスを再起動して更新しました'
+              : 'サービスの再起動に問題が発生しました')),
         );
-        
+
         // 少し待ってからデータを再読み込み
         await Future.delayed(const Duration(seconds: 2));
         await _loadData();
@@ -169,157 +171,157 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
-              onRefresh: _loadData,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Card(
-                      elevation: 2,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'デバイス情報',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            const SizedBox(height: 8),
-                            Text('デバイス番号: 【$deviceNumber】'),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                const Text('ステータス: '),
-                                Icon(
-                                  isServiceRunning 
-                                    ? Icons.circle 
-                                    : Icons.error_outline,
-                                  color: isServiceRunning 
-                                    ? Colors.green 
-                                    : Colors.red,
-                                  size: 16,
-                                ),
-                                Text(
-                                  isServiceRunning 
-                                    ? ' モニタリング中' 
-                                    : ' 停止中'
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text('最終同期: ${_formatDateTime(lastSync)}'),
-                            const SizedBox(height: 4),
-                            Text('空き容量: ${_formatSize(lastFreeSpace)}'),
-                          ],
-                        ),
+        onRefresh: _loadData,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'デバイス情報',
+                        style: Theme.of(context).textTheme.titleLarge,
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    Card(
-                      elevation: 2,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '動作ステータス',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            const SizedBox(height: 8),
-                            ListTile(
-                              leading: const Icon(Icons.access_time, color: Colors.blue),
-                              title: const Text('送信頻度'),
-                              subtitle: const Text('15分ごと'),
-                              dense: true,
-                            ),
-                            ListTile(
-                              leading: Icon(
-                                lastSync != null 
-                                  ? Icons.check_circle 
-                                  : Icons.error, 
-                                color: lastSync != null 
-                                  ? Colors.green 
-                                  : Colors.red
-                              ),
-                              title: const Text('同期状態'),
-                              subtitle: Text(
-                                lastSync != null 
-                                  ? '正常に動作しています' 
-                                  : '同期記録がありません'
-                              ),
-                              dense: true,
-                            ),
-                            const SizedBox(height: 8),
-                            SwitchListTile(
-                              title: const Text('監視サービス'),
-                              subtitle: Text(
-                                isServiceRunning 
-                                  ? '実行中 - 通知から確認できます' 
-                                  : '停止中 - タップして開始'
-                              ),
-                              value: isServiceRunning,
-                              onChanged: (value) async {
-                                await _toggleService();
-                              },
-                              secondary: Icon(
-                                isServiceRunning 
-                                  ? Icons.notifications_active 
-                                  : Icons.notifications_off,
-                                color: isServiceRunning 
-                                  ? Colors.green 
-                                  : Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
+                      const SizedBox(height: 8),
+                      Text('デバイス番号: 【$deviceNumber】'),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Text('ステータス: '),
+                          Icon(
+                            isServiceRunning
+                                ? Icons.circle
+                                : Icons.error_outline,
+                            color: isServiceRunning
+                                ? Colors.green
+                                : Colors.red,
+                            size: 16,
+                          ),
+                          Text(
+                              isServiceRunning
+                                  ? ' モニタリング中'
+                                  : ' 停止中'
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    Card(
-                      elevation: 2,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'ヘルプ',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            const SizedBox(height: 8),
-                            ListTile(
-                              leading: const Icon(Icons.battery_alert, color: Colors.orange),
-                              title: const Text('バッテリー最適化設定'),
-                              subtitle: const Text('端末のバッテリー設定を変更して、バックグラウンド動作を最適化します'),
-                              onTap: () => OptimizationHelper.showOptimizationDialog(context),
-                              dense: true,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'このアプリはバックグラウンドで動作しています。',
-                      style: TextStyle(fontSize: 14),
-                    ),
-                    const Text(
-                      'デバイスの空き容量情報を15分ごとに送信しています。',
-                      style: TextStyle(fontSize: 14),
-                    ),
-                    if (isServiceRunning)
-                      const Text(
-                        '※通知を消すと監視サービスが停止する場合があります。',
-                        style: TextStyle(fontSize: 14, color: Colors.red),
-                      ),
-                  ],
+                      const SizedBox(height: 4),
+                      Text('最終同期: ${_formatDateTime(lastSync)}'),
+                      const SizedBox(height: 4),
+                      Text('空き容量: ${_formatSize(lastFreeSpace)}'),
+                    ],
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(height: 16),
+              Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '動作ステータス',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      ListTile(
+                        leading: const Icon(Icons.access_time, color: Colors.blue),
+                        title: const Text('送信頻度'),
+                        subtitle: const Text('15分ごと'),
+                        dense: true,
+                      ),
+                      ListTile(
+                        leading: Icon(
+                            lastSync != null
+                                ? Icons.check_circle
+                                : Icons.error,
+                            color: lastSync != null
+                                ? Colors.green
+                                : Colors.red
+                        ),
+                        title: const Text('同期状態'),
+                        subtitle: Text(
+                            lastSync != null
+                                ? '正常に動作しています'
+                                : '同期記録がありません'
+                        ),
+                        dense: true,
+                      ),
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        title: const Text('監視サービス'),
+                        subtitle: Text(
+                            isServiceRunning
+                                ? '実行中 - 通知から確認できます'
+                                : '停止中 - タップして開始'
+                        ),
+                        value: isServiceRunning,
+                        onChanged: (value) async {
+                          await _toggleService();
+                        },
+                        secondary: Icon(
+                          isServiceRunning
+                              ? Icons.notifications_active
+                              : Icons.notifications_off,
+                          color: isServiceRunning
+                              ? Colors.green
+                              : Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'ヘルプ',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      ListTile(
+                        leading: const Icon(Icons.battery_alert, color: Colors.orange),
+                        title: const Text('バッテリー最適化設定'),
+                        subtitle: const Text('端末のバッテリー設定を変更して、バックグラウンド動作を最適化します'),
+                        onTap: () => OptimizationHelper.showOptimizationDialog(context),
+                        dense: true,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'このアプリはバックグラウンドで動作しています。',
+                style: TextStyle(fontSize: 14),
+              ),
+              const Text(
+                'デバイスの空き容量情報を15分ごとに送信しています。',
+                style: TextStyle(fontSize: 14),
+              ),
+              if (isServiceRunning)
+                const Text(
+                  '※通知を消すと監視サービスが停止する場合があります。',
+                  style: TextStyle(fontSize: 14, color: Colors.red),
+                ),
+            ],
+          ),
+        ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           await _loadData();

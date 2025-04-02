@@ -15,21 +15,21 @@ import 'package:permission_handler/permission_handler.dart';
 void main() async {
   // Flutter初期化を確実に行う
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // エラーハンドリングを追加
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
     print('Flutter エラー: ${details.exception}');
     print('スタックトレース: ${details.stack}');
   };
-  
+
   try {
     // 設定の問題の診断
     await _diagnosePreferences();
-    
+
     // フォアグラウンドタスクの初期設定
     await _initForegroundTask();
-    
+
     runApp(const MyApp());
   } catch (e, stackTrace) {
     print('アプリ起動時にエラーが発生: $e');
@@ -43,11 +43,11 @@ void main() async {
 Future<void> _diagnosePreferences() async {
   try {
     print('===== 設定診断開始 =====');
-    
+
     // ストレージへのアクセス確認
     final appDir = await getApplicationDocumentsDirectory();
     print('アプリストレージパス: ${appDir.path}');
-    
+
     // ファイル書き込みテスト
     try {
       final testFile = File('${appDir.path}/test_write.txt');
@@ -57,28 +57,28 @@ Future<void> _diagnosePreferences() async {
     } catch (e) {
       print('ファイル書き込みテスト: 失敗 - $e');
     }
-    
+
     // SharedPreferences初期化確認
     try {
       final prefs = await SharedPreferences.getInstance();
       print('SharedPreferences初期化: 成功');
       print('保存されているキー: ${prefs.getKeys().join(', ')}');
-      
+
       // テスト値の保存と読み込み
       await prefs.setString('diagnostic_test', 'test_value_${DateTime.now().millisecondsSinceEpoch}');
       final testValue = prefs.getString('diagnostic_test');
       print('SharedPreferences書き込み・読み込みテスト: ${testValue != null ? "成功" : "失敗"}');
-      
+
       // 既存の設定値の確認
       print('device_number: ${prefs.getInt('device_number')}');
       print('setup_completed: ${prefs.getBool('setup_completed')}');
     } catch (e) {
       print('SharedPreferencesテスト: 失敗 - $e');
-      
+
       // 代替策: ファイルベースの設定を確認
       await _checkBackupSettingsFile();
     }
-    
+
     print('===== 設定診断終了 =====');
   } catch (e) {
     print('設定診断中にエラー: $e');
@@ -90,7 +90,7 @@ Future<void> _checkBackupSettingsFile() async {
   try {
     final dir = await getApplicationDocumentsDirectory();
     final file = File('${dir.path}/app_settings.json');
-    
+
     if (await file.exists()) {
       final contents = await file.readAsString();
       print('バックアップ設定ファイル: 存在する');
@@ -102,7 +102,7 @@ Future<void> _checkBackupSettingsFile() async {
       }
     } else {
       print('バックアップ設定ファイル: 存在しない');
-      
+
       // 初期バックアップファイルの作成
       await file.writeAsString('{}');
       print('初期バックアップファイルを作成しました');
@@ -116,7 +116,7 @@ Future<void> _checkBackupSettingsFile() async {
 Future<void> _initForegroundTask() async {
   try {
     print('フォアグラウンドタスク初期設定開始');
-    
+
     // 旧バージョンとの互換性のための初期化コード
     // バージョン8.17.0に合わせた設定
     FlutterForegroundTask.init(
@@ -132,13 +132,13 @@ Future<void> _initForegroundTask() async {
         playSound: false,
       ),
       foregroundTaskOptions: ForegroundTaskOptions(
-        interval: 15 * 60 * 1000, // 15分間隔
+        eventAction: ForegroundTaskEventAction.repeat(15 * 60 * 1000), // 15分間隔
         autoRunOnBoot: true,
         allowWakeLock: true,
         allowWifiLock: true,
       ),
     );
-    
+
     print('フォアグラウンドタスク初期設定完了');
   } catch (e) {
     print('フォアグラウンドタスク初期設定エラー: $e');
@@ -147,7 +147,7 @@ Future<void> _initForegroundTask() async {
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-  
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -164,7 +164,7 @@ class MyApp extends StatelessWidget {
 // エラーハンドリングを追加したラッパーウィジェット
 class SafeAppWrapper extends StatefulWidget {
   const SafeAppWrapper({super.key});
-  
+
   @override
   SafeAppWrapperState createState() => SafeAppWrapperState();
 }
@@ -173,13 +173,13 @@ class SafeAppWrapperState extends State<SafeAppWrapper> {
   bool _isLoading = true;
   bool _setupCompleted = false;
   String? _errorMessage;
-  
+
   @override
   void initState() {
     super.initState();
     _initialize();
   }
-  
+
   Future<void> _initialize() async {
     try {
       // 権限を確認
@@ -190,10 +190,10 @@ class SafeAppWrapperState extends State<SafeAppWrapper> {
         }
         print('ストレージ権限状態: $status');
       }
-      
+
       // セットアップ状態を確認
       final completed = await _isSetupCompleted();
-      
+
       if (mounted) {
         setState(() {
           _setupCompleted = completed;
@@ -210,7 +210,7 @@ class SafeAppWrapperState extends State<SafeAppWrapper> {
       }
     }
   }
-  
+
   // セットアップが完了しているかどうかを確認（PreferencesUtilを使用）
   Future<bool> _isSetupCompleted() async {
     try {
@@ -220,7 +220,7 @@ class SafeAppWrapperState extends State<SafeAppWrapper> {
       return completed;
     } catch (e) {
       print('セットアップ確認エラー: $e');
-      
+
       // 直接SharedPreferencesを試してみる（フォールバック）
       try {
         final prefs = await SharedPreferences.getInstance();
@@ -229,7 +229,7 @@ class SafeAppWrapperState extends State<SafeAppWrapper> {
         return value;
       } catch (e2) {
         print('直接確認でもエラー: $e2');
-        
+
         // 最後の手段：ファイルから直接読み込む
         try {
           final dir = await getApplicationDocumentsDirectory();
@@ -246,12 +246,12 @@ class SafeAppWrapperState extends State<SafeAppWrapper> {
         } catch (e3) {
           print('ファイル読み込みでもエラー: $e3');
         }
-        
+
         return false;
       }
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -259,7 +259,7 @@ class SafeAppWrapperState extends State<SafeAppWrapper> {
         body: Center(child: CircularProgressIndicator()),
       );
     }
-    
+
     if (_errorMessage != null) {
       return Scaffold(
         body: Center(
@@ -292,7 +292,7 @@ class SafeAppWrapperState extends State<SafeAppWrapper> {
         ),
       );
     }
-    
+
     return WithForegroundTask(
       child: _setupCompleted
           ? const BatteryOptimizationWrapper(child: HomeScreen())
@@ -304,28 +304,28 @@ class SafeAppWrapperState extends State<SafeAppWrapper> {
 // バッテリー最適化設定を案内するラッパーウィジェット
 class BatteryOptimizationWrapper extends StatefulWidget {
   final Widget child;
-  
+
   const BatteryOptimizationWrapper({super.key, required this.child});
-  
+
   @override
   BatteryOptimizationWrapperState createState() => BatteryOptimizationWrapperState();
 }
 
 class BatteryOptimizationWrapperState extends State<BatteryOptimizationWrapper> {
   bool _checkingOptimization = true;
-  
+
   @override
   void initState() {
     super.initState();
     _checkOptimizationSettings();
   }
-  
+
   Future<void> _checkOptimizationSettings() async {
     try {
       // 初回実行フラグを確認（PreferencesUtilを使用）
       final isFirstRun = await PreferencesUtil.isFirstRun();
       print('初回実行確認: $isFirstRun');
-      
+
       // 最適化設定のダイアログを表示するかどうか
       if (isFirstRun) {
         // 1秒待機して、UIが完全に描画された後にダイアログを表示
@@ -335,13 +335,13 @@ class BatteryOptimizationWrapperState extends State<BatteryOptimizationWrapper> 
               OptimizationHelper.showOptimizationDialog(context).then((_) async {
                 // 初回実行フラグをオフに
                 await PreferencesUtil.setFirstRun(false);
-                
+
                 // セットアップ済みの場合はサービスを開始
                 if (await PreferencesUtil.isSetupCompleted()) {
                   print('サービス開始');
                   await initForegroundTask();
                 }
-                
+
                 if (mounted) {
                   setState(() {
                     _checkingOptimization = false;
@@ -357,7 +357,7 @@ class BatteryOptimizationWrapperState extends State<BatteryOptimizationWrapper> 
           print('サービス開始');
           await initForegroundTask();
         }
-        
+
         setState(() {
           _checkingOptimization = false;
         });
@@ -369,7 +369,7 @@ class BatteryOptimizationWrapperState extends State<BatteryOptimizationWrapper> 
       });
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     if (_checkingOptimization) {
@@ -377,7 +377,7 @@ class BatteryOptimizationWrapperState extends State<BatteryOptimizationWrapper> 
         body: Center(child: CircularProgressIndicator()),
       );
     }
-    
+
     return widget.child;
   }
 }
