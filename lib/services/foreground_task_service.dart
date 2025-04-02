@@ -4,7 +4,11 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import '../utils/emulator_detector.dart';
+import '../utils/preferences.dart';
+import '../services/api_service.dart';
 
 // トップレベル関数としてコールバックを定義
 @pragma('vm:entry-point')
@@ -28,7 +32,6 @@ class StorageMonitorTaskHandler extends TaskHandler {
 
   @override
   Future<void> onDestroy(DateTime timestamp) async {
-    // 修正: 引数は1つだけ
     print('フォアグラウンドサービスが停止しました');
   }
 
@@ -36,15 +39,14 @@ class StorageMonitorTaskHandler extends TaskHandler {
   Future<void> _checkAndSendStorageInfo() async {
     try {
       print('ストレージ情報のチェックを開始...');
-      // SharedPreferencesのインスタンスを取得
-      final prefs = await SharedPreferences.getInstance();
 
-      // デバイス番号を取得
-      final deviceNumber = prefs.getInt('device_number');
+      // デバイス番号を取得 - PreferencesUtilを使用
+      final deviceNumber = await PreferencesUtil.getDeviceNumber();
       if (deviceNumber == null) {
         print('デバイス番号が設定されていません');
         return;
       }
+      print('デバイス番号取得: $deviceNumber');
 
       // 空き容量を取得
       final freeSpace = await _getFreeSpace();
@@ -59,9 +61,18 @@ class StorageMonitorTaskHandler extends TaskHandler {
       if (success) {
         // 成功した場合、最終更新情報を保存
         final now = DateTime.now().toIso8601String();
-        await prefs.setString('last_sync', now);
-        await prefs.setInt('last_free_space', freeSpace);
-        print('データ保存完了: $now, $freeSpace');
+
+        // PreferencesUtilを使用して保存
+        final syncResult = await PreferencesUtil.setLastSync(now);
+        print('同期日時保存結果: $syncResult ($now)');
+
+        final spaceResult = await PreferencesUtil.setLastFreeSpace(freeSpace);
+        print('空き容量保存結果: $spaceResult ($freeSpace)');
+
+        // 保存確認のデバッグ
+        final savedSync = await PreferencesUtil.getLastSync();
+        final savedFreeSpace = await PreferencesUtil.getLastFreeSpace();
+        print('保存確認 - 同期日時: $savedSync, 空き容量: $savedFreeSpace');
 
         // 通知を更新
         final freeSpaceGB = (freeSpace / (1024 * 1024 * 1024)).toStringAsFixed(2);
@@ -99,16 +110,15 @@ class StorageMonitorTaskHandler extends TaskHandler {
 
       // 利用可能なサイズを取得
       int freeSpace = statFs.size;
-      
-      // ★★★ エミュレータ対応（実環境移行時に除外可能） ★★★
+
+      // エミュレータ対応
       freeSpace = await EmulatorDetector.adjustStorageSize(freeSpace);
-      // ★★★ エミュレータ対応ここまで ★★★
-      
+
       return freeSpace;
     } catch (e) {
       print('ストレージ情報の取得に失敗: $e');
 
-      // エラー時はフォールバック値を返す（明示的に小さくして判別可能に）
+      // エラー時はフォールバック値を返す
       return 32 * 1024 * 1024;  // 32MBのフォールバック
     }
   }
@@ -128,7 +138,6 @@ class StorageMonitorTaskHandler extends TaskHandler {
         deviceModel = "${androidInfo.manufacturer} ${androidInfo.model}";
       } else if (Platform.isIOS) {
         final iosInfo = await deviceInfo.iosInfo;
-        // iosInfo.modelは一部のバージョンではnullableなので、null安全に対応
         deviceModel = iosInfo.model ?? "iOS Device";
       }
 
@@ -142,9 +151,42 @@ class StorageMonitorTaskHandler extends TaskHandler {
 
       print('送信データ準備: $data');
 
-      // デモ環境ではAPI呼び出しをシミュレートする
-      print('デモモード: API呼び出しをシミュレート');
-      return true;
+      // 実際のAPI呼び出し - ApiServiceを使用
+      try {
+        // API呼び出し（実際のHTTPリクエスト）
+        final apiUrl = 'http://10.0.2.2/storage_monitor/public/receive_data.php';
+
+        print('APIリクエスト送信: $apiUrl');
+
+        final response = await http.post(
+          Uri.parse(apiUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'device_number': deviceNumber,
+            'free_space': freeSpace,
+          }),
+        );
+
+        print('APIレスポンス: ${response.statusCode} - ${response.body}');
+
+        if (response.statusCode == 200) {
+          try {
+            final responseData = jsonDecode(response.body);
+            final success = responseData['status'] == 'success';
+            print('API呼び出し成功: $success');
+            return success;
+          } catch (e) {
+            print('レスポンス解析エラー: $e');
+            return false;
+          }
+        } else {
+          print('APIエラー: ${response.statusCode}');
+          return false;
+        }
+      } catch (e) {
+        print('API呼び出しエラー: $e');
+        return false;
+      }
     } catch (e) {
       print('データ送信処理でエラー: $e');
       return false;
@@ -157,8 +199,7 @@ Future<bool> initForegroundTask() async {
   print('フォアグラウンドタスク初期化開始...');
 
   // 通知テキスト用にデバイス番号を取得
-  final prefs = await SharedPreferences.getInstance();
-  final deviceNumber = prefs.getInt('device_number') ?? 0;
+  final deviceNumber = await PreferencesUtil.getDeviceNumber() ?? 0;
 
   // フォアグラウンドタスク設定の初期化
   FlutterForegroundTask.init(
@@ -174,7 +215,9 @@ Future<bool> initForegroundTask() async {
       playSound: false,
     ),
     foregroundTaskOptions: ForegroundTaskOptions(
-      eventAction: ForegroundTaskEventAction.repeat(15 * 60 * 1000), // 15分間隔
+      // 開発中はより短い間隔でテスト
+      eventAction: ForegroundTaskEventAction.repeat(60 * 1000), // 1分間隔（テスト用）
+      // eventAction: ForegroundTaskEventAction.repeat(15 * 60 * 1000), // 15分間隔（本番用）
       autoRunOnBoot: true,
       allowWakeLock: true,
       allowWifiLock: true,
@@ -190,7 +233,6 @@ Future<bool> initForegroundTask() async {
     );
 
     print('フォアグラウンドタスク初期化結果: $result');
-    // ServiceRequestResultではなく直接boolを返す
     return true; // 常に成功とみなす
   } catch (e) {
     print('フォアグラウンドタスク初期化エラー: $e');
@@ -204,7 +246,6 @@ Future<bool> stopForegroundTask() async {
   try {
     final result = await FlutterForegroundTask.stopService();
     print('フォアグラウンドタスク停止結果: $result');
-    // ServiceRequestResultではなく直接boolを返す
     return true; // 常に成功とみなす
   } catch (e) {
     print('フォアグラウンドタスク停止エラー: $e');
