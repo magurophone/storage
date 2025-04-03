@@ -56,6 +56,7 @@ class PreferencesUtil {
     }
   }
 
+
   // セットアップ完了フラグを保存
   static Future<bool> setSetupCompleted(bool completed) async {
     try {

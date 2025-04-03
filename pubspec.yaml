@@ -18,7 +18,7 @@ dependencies:
   # ストレージ・デバイス情報
   path_provider: ^2.1.5
   device_info_plus: ^11.3.3
-  storage_space: ^2.0.0    # ディスク容量取得用プラグインを追加
+  storage_space: ^1.1.0    # ディスク容量取得用プラグインを追加
 
   # 権限管理
   permission_handler: ^11.1.0
